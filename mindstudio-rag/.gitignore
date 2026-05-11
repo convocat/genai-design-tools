@@ -1,7 +1,10 @@
 .env
 .venv/
 __pycache__/
-store/corpus.db
+# corpus.db is intentionally tracked for the v0 Vercel deploy (22MB).
+# When ingest grows beyond GitHub's 100MB single-file limit, move it to
+# Vercel Blob + fetch on cold start.
+# store/corpus.db
 store/corpus.db-wal
 store/corpus.db-shm
 store/graph.json

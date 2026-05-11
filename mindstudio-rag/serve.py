@@ -242,6 +242,49 @@ def collections():
     return {"collections": communities_mod.list_all(State.conn)}
 
 
+@app.get("/api/graph-data")
+def graph_data():
+    """Single payload for the UI graph view: entities + relationships + community map."""
+    _ensure_loaded()
+    entities = [
+        {"id": r[0], "name": r[1], "type": r[2], "description": r[3]}
+        for r in State.conn.execute(
+            "SELECT id, name, type, description FROM entities"
+        ).fetchall()
+    ]
+    relationships = [
+        {"source": r[0], "target": r[1], "description": r[2], "strength": r[3]}
+        for r in State.conn.execute(
+            "SELECT source_name, target_name, description, strength FROM relationships"
+        ).fetchall()
+    ]
+    communities = [
+        {"id": r[0], "title": r[1], "size": r[2]}
+        for r in State.conn.execute(
+            "SELECT id, title, size FROM communities ORDER BY size DESC"
+        ).fetchall()
+    ]
+    members = [
+        {"community_id": r[0], "entity_name": r[1]}
+        for r in State.conn.execute(
+            "SELECT community_id, entity_name FROM community_members"
+        ).fetchall()
+    ]
+    degree: dict[str, int] = {}
+    for r in relationships:
+        degree[r["source"]] = degree.get(r["source"], 0) + 1
+        degree[r["target"]] = degree.get(r["target"], 0) + 1
+    for e in entities:
+        e["degree"] = degree.get(e["name"], 0)
+
+    return {
+        "entities": entities,
+        "relationships": relationships,
+        "communities": communities,
+        "members": members,
+    }
+
+
 @app.get("/api/graph")
 def graph():
     _ensure_loaded()

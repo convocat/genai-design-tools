@@ -23,7 +23,9 @@ DIM = 1536
 
 def open_db(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
+    # check_same_thread=False so FastAPI's threadpool can share one read-mostly
+    # connection. Ingest is single-threaded; serve only reads at request time.
+    conn = sqlite3.connect(str(path), check_same_thread=False)
     conn.enable_load_extension(True)
     sqlite_vec.load(conn)
     conn.enable_load_extension(False)
