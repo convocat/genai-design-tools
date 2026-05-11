@@ -17,10 +17,16 @@ import re
 import sqlite3
 from typing import Iterable
 
-import networkx as nx
-from anthropic import Anthropic
+# networkx is only needed at ingest (community detection); serve.py imports
+# this module for SQL-only helpers (list_all, communities_for_entities) and
+# must not pull a 30+ MB dependency into the serverless bundle. Lazy import
+# inside the functions that need it.
+# import networkx as nx  -- moved into _build_graph / _detect
 
-from langfuse_integration import end_trace, extract_usage, get_prompt, start_trace
+# anthropic + langfuse helpers are only used by summarize_community +
+# detect_and_summarize (ingest paths). Lazy-import to keep the runtime bundle lean.
+# from anthropic import Anthropic
+# from langfuse_integration import end_trace, extract_usage, get_prompt, start_trace
 
 MODEL = "claude-haiku-4-5-20251001"
 PROMPT_ID = "mindstudio/summarize-community"
@@ -48,7 +54,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def _build_graph(conn: sqlite3.Connection) -> nx.Graph:
+def _build_graph(conn: sqlite3.Connection):
+    import networkx as nx
     g = nx.Graph()
     for row in conn.execute("SELECT name FROM entities").fetchall():
         g.add_node(row[0])
@@ -63,7 +70,8 @@ def _build_graph(conn: sqlite3.Connection) -> nx.Graph:
     return g
 
 
-def _detect(g: nx.Graph) -> list[set[str]]:
+def _detect(g) -> list[set[str]]:
+    import networkx as nx
     if g.number_of_nodes() == 0:
         return []
     try:
@@ -109,8 +117,9 @@ def _format_for_prompt(payload: dict) -> str:
     return "\n".join(parts)
 
 
-def summarize_community(client: Anthropic, payload: dict, fallback_text: str,
+def summarize_community(client, payload: dict, fallback_text: str,
                         trace=None) -> tuple[str, str]:
+    from langfuse_integration import extract_usage, get_prompt
     system, prompt_obj = get_prompt(PROMPT_ID, fallback_text)
     user = _format_for_prompt(payload)
     messages = [{"role": "user", "content": user}]
@@ -139,6 +148,9 @@ def summarize_community(client: Anthropic, payload: dict, fallback_text: str,
 def detect_and_summarize(conn: sqlite3.Connection, fallback_text: str,
                          progress=print) -> int:
     """Replace any existing communities with freshly detected ones."""
+    from anthropic import Anthropic
+    from langfuse_integration import end_trace, start_trace
+
     init_schema(conn)
     conn.execute("DELETE FROM communities")
     conn.execute("DELETE FROM community_members")
