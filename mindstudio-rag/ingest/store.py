@@ -12,6 +12,7 @@ Tables:
 from __future__ import annotations
 
 import json
+import os
 import struct
 import sys
 from pathlib import Path
@@ -30,16 +31,34 @@ import sqlite_vec
 DIM = 1536
 
 
-def open_db(path: Path) -> sqlite3.Connection:
+def open_db(path: Path, *, read_only: bool | None = None) -> sqlite3.Connection:
+    """Open the corpus DB. Auto-detects read-only context (e.g. Vercel's
+    /var/task) and skips WAL mode there, since WAL needs to create journal
+    files alongside the DB and the directory is read-only.
+
+    Local ingest passes read_only=False explicitly to get the usual WAL
+    setup. Local serve and Vercel both default to read-only.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    # check_same_thread=False so FastAPI's threadpool can share one read-mostly
-    # connection. Ingest is single-threaded; serve only reads at request time.
-    conn = sqlite3.connect(str(path), check_same_thread=False)
+    if read_only is None:
+        # Heuristic: on Vercel-style read-only deployments, /var/task is
+        # not writable. Probe by trying to create a temp file alongside.
+        read_only = not os.access(path.parent, os.W_OK)
+
+    if read_only:
+        uri = f"file:{path.as_posix()}?mode=ro&immutable=1"
+        conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+    else:
+        conn = sqlite3.connect(str(path), check_same_thread=False)
+
     conn.enable_load_extension(True)
     sqlite_vec.load(conn)
     conn.enable_load_extension(False)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+
+    if not read_only:
+        # WAL needs a writable directory for -wal and -shm sidecar files.
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
