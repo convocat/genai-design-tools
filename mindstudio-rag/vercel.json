@@ -8,7 +8,7 @@
       "runtime": "@vercel/python@4.3.1",
       "maxDuration": 60,
       "memory": 1024,
-      "includeFiles": "{serve.py,langfuse_integration.py,_langfuse_helpers.py,ingest/**,prompts/**,store/corpus.db}"
+      "excludeFiles": "{ui/**,**/__pycache__/**,**/*.pyc,requirements-ingest.txt,*.md,store/*.log,store/raw/**,store/corpus.db-wal,store/corpus.db-shm}"
     }
   },
   "rewrites": [
