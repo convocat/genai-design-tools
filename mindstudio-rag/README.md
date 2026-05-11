@@ -68,6 +68,7 @@ The repo deploys as one Vercel project: the Python FastAPI app handles `/api/*` 
 ### Production notes
 
 - **`corpus.db` ships in the repo** (22 MB). When ingest outgrows GitHub's 100 MB single-file limit, move it to Vercel Blob and download into `/tmp` on cold start.
+- **Langfuse is excluded from the Vercel bundle.** Its OpenTelemetry + protobuf transitive dependencies are ~80 MB and would push the function past Vercel's 250 MB unzipped limit. In production the bot uses prompts from `prompts/*.md` directly and skips trace recording. Local dev installs `requirements-ingest.txt` which includes langfuse and re-enables the full instrumentation.
 - **Cost per question**: ~$0.01–0.03 (HyDE Haiku + answer Sonnet + one embedding call). Public deploy without rate limiting is fine for low traffic but watch the dashboard.
 - **CORS** is wide open. If the bot is embedded only at `maaike.ai`, narrow `allow_origins` in `serve.py` before going prod.
 - **Cold start**: the FastAPI module loads sqlite-vec and opens the DB on first request (~1–2 s). Subsequent requests reuse the module.
