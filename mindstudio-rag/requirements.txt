@@ -7,4 +7,8 @@ openai>=1.50
 fastapi>=0.115
 pydantic>=2.0
 sqlite-vec>=0.1.6
+# Vercel's stdlib sqlite3 is compiled without enable_load_extension,
+# so we ship a self-contained SQLite via pysqlite3-binary and route
+# `import sqlite3` through the shim in ingest/store.py.
+pysqlite3-binary>=0.5.4
 langfuse>=3.0

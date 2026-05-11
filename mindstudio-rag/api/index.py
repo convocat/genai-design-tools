@@ -13,6 +13,15 @@ import os
 import sys
 from pathlib import Path
 
+# Route stdlib `import sqlite3` to pysqlite3-binary before any other
+# module imports it. Vercel's stdlib sqlite3 is compiled without
+# loadable-extension support, which breaks sqlite-vec.
+try:
+    import pysqlite3  # type: ignore
+    sys.modules["sqlite3"] = pysqlite3
+except ImportError:
+    pass
+
 # Make the bot's modules importable on Vercel (where the working dir differs).
 _THIS = Path(__file__).resolve()
 _ROOT = _THIS.parent.parent

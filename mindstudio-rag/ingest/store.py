@@ -12,9 +12,18 @@ Tables:
 from __future__ import annotations
 
 import json
-import sqlite3
 import struct
+import sys
 from pathlib import Path
+
+# Vercel's bundled Python is built without loadable-extension support
+# in stdlib sqlite3. Prefer pysqlite3-binary (which has it) when present,
+# fall back to stdlib for local dev where the system Python has it.
+try:
+    import pysqlite3 as sqlite3  # type: ignore
+    sys.modules["sqlite3"] = sqlite3
+except ImportError:
+    import sqlite3  # type: ignore
 
 import sqlite_vec
 
