@@ -21,7 +21,8 @@ vercel.json    deploy config
 ```
 python -m venv .venv
 .venv\Scripts\activate                    # Windows; macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt           # runtime only (serve.py + ingest helpers it imports)
+pip install -r requirements-ingest.txt    # crawler / parser / chunker / community detection
 copy .env.example .env                    # fill ANTHROPIC_API_KEY, OPENAI_API_KEY, LANGFUSE_*
 
 cd ui && npm install && cd ..

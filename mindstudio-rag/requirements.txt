@@ -1,12 +1,11 @@
-httpx>=0.27
-selectolax>=0.3.21
-markdownify>=0.13
-sqlite-vec>=0.1.6
+# Runtime requirements for the Vercel serverless function.
+# Only what serve.py + its transitive ingest imports need at request time.
+# For ingest (crawler, parser, chunker, embed pipeline) see requirements-ingest.txt.
+
 anthropic>=0.40
 openai>=1.50
-langfuse>=3.0
 fastapi>=0.115
-uvicorn>=0.30
-python-dotenv>=1.0
-tiktoken>=0.7
+pydantic>=2.0
+sqlite-vec>=0.1.6
 networkx>=3.2
+langfuse>=3.0
