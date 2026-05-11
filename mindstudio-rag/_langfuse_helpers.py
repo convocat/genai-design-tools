@@ -123,6 +123,17 @@ class _Trace:
             metadata=metadata,
         )
         self._span = self._span_cm.__enter__()
+        # Capture the OTEL context that now holds our root span as active.
+        # We re-attach this context inside record_*() calls so child
+        # observations nest correctly even when fired from a different
+        # thread / async task (e.g. a streaming response generator).
+        self._otel_ctx = None
+        try:
+            from opentelemetry import context as _otel_context  # type: ignore
+            self._otel_context = _otel_context
+            self._otel_ctx = _otel_context.get_current()
+        except Exception:
+            self._otel_context = None
         self._props_cm = None
         try:
             kwargs: dict[str, Any] = {"trace_name": name}
@@ -138,7 +149,25 @@ class _Trace:
             print(f"[langfuse] propagate_attributes failed: {e}", file=sys.stderr)
             self._props_cm = None
 
+    def _with_context(self):
+        """Re-attach the captured OTEL context. Returns a token to detach with."""
+        if self._otel_context is None or self._otel_ctx is None:
+            return None
+        try:
+            return self._otel_context.attach(self._otel_ctx)
+        except Exception:
+            return None
+
+    def _detach(self, token) -> None:
+        if token is None or self._otel_context is None:
+            return
+        try:
+            self._otel_context.detach(token)
+        except Exception:
+            pass
+
     def record_retrieval(self, question: str, retrieval_debug: dict) -> None:
+        token = self._with_context()
         try:
             with self._client.start_as_current_observation(
                 name="retrieval",
@@ -155,10 +184,13 @@ class _Trace:
                 })
         except Exception as e:
             print(f"[langfuse] record_retrieval failed: {e}", file=sys.stderr)
+        finally:
+            self._detach(token)
 
     def record_generation(self, *, model: str, messages: list, system_prompt: str,
                           output_text: str, usage: Optional[dict] = None,
                           prompt_obj: Optional[Any] = None) -> None:
+        token = self._with_context()
         try:
             obs_kwargs: dict[str, Any] = {
                 "name": "generation",
@@ -175,6 +207,8 @@ class _Trace:
                 gen.update(**update_kwargs)
         except Exception as e:
             print(f"[langfuse] record_generation failed: {e}", file=sys.stderr)
+        finally:
+            self._detach(token)
 
     def set_output(self, text: str) -> None:
         try:
