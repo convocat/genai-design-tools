@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+store/corpus.db
+store/corpus.db-wal
+store/corpus.db-shm
+store/graph.json
+store/raw/
+store/*.log
+ui/node_modules/
+ui/dist/
