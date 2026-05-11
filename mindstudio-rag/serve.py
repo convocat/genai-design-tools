@@ -86,10 +86,23 @@ def _ensure_loaded() -> None:
 
 
 # ── HyDE ───────────────────────────────────────────────────────────────────
-def _hyde(question: str, trace=None) -> str:
+def _format_history_for_hyde(history: Optional[list]) -> str:
+    """Render the last few turns as plain text so HyDE can resolve references
+    like 'the other one' or 'that block' before generating the hypothetical
+    passage. Trimmed to keep the rewrite cheap."""
+    if not history:
+        return ""
+    tail = list(history)[-4:]
+    lines = [f"{h.role.capitalize()}: {h.content}" for h in tail]
+    return "Recent conversation:\n" + "\n".join(lines) + "\n\n"
+
+
+def _hyde(question: str, history: Optional[list] = None, trace=None) -> str:
     fb = _fallback("query-rewrite.md")
     system, prompt_obj = get_prompt(HYDE_PROMPT_ID, fb)
-    messages = [{"role": "user", "content": question}]
+    hist_block = _format_history_for_hyde(history)
+    user_content = f"{hist_block}Current question: {question}" if hist_block else question
+    messages = [{"role": "user", "content": user_content}]
     try:
         resp = State.anthropic.messages.create(
             model=HYDE_MODEL, max_tokens=300, system=system, messages=messages,
@@ -106,8 +119,8 @@ def _hyde(question: str, trace=None) -> str:
 
 
 # ── Local search ───────────────────────────────────────────────────────────
-def retrieve(question: str, trace=None) -> dict:
-    hyde_passage = _hyde(question, trace=trace)
+def retrieve(question: str, history: Optional[list] = None, trace=None) -> dict:
+    hyde_passage = _hyde(question, history=history, trace=trace)
     embed_text = f"{question}\n\n{hyde_passage}"
 
     try:
@@ -222,8 +235,14 @@ def _format_context(retrieval: dict) -> str:
 
 
 # ── API ────────────────────────────────────────────────────────────────────
+class HistoryItem(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
 class AskRequest(BaseModel):
     question: str
+    history: Optional[list[HistoryItem]] = None
     session_id: Optional[str] = None
 
 
@@ -323,7 +342,7 @@ def ask(req: AskRequest):
     )
 
     try:
-        retrieval = retrieve(question, trace=trace)
+        retrieval = retrieve(question, history=req.history, trace=trace)
         try:
             trace.record_retrieval(question, {
                 "matched_articles": retrieval["pages"],
@@ -339,7 +358,16 @@ def ask(req: AskRequest):
         context = _format_context(retrieval)
         system, prompt_obj = get_prompt(ANSWER_PROMPT_ID, _fallback("answer-system-prompt.md"))
         user = f"---User question---\n{question}\n\n---Data---\n{context}"
-        messages = [{"role": "user", "content": user}]
+
+        # Build the conversation: prior turns verbatim, then the new user
+        # turn with retrieval context attached. Assistant prior turns are
+        # passed as-is so the model can refer back to them naturally.
+        messages: list[dict] = []
+        if req.history:
+            for h in req.history:
+                if h.role in ("user", "assistant") and h.content:
+                    messages.append({"role": h.role, "content": h.content})
+        messages.append({"role": "user", "content": user})
 
         def stream():
             collected: list[str] = []

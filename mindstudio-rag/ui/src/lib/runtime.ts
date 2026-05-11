@@ -16,6 +16,8 @@ function setSources(s: Source[]) {
   sourceListeners.forEach((cb) => cb(s));
 }
 
+const HISTORY_LIMIT = 10;
+
 export const MindStudioAdapter: ChatModelAdapter = {
   async *run({ messages, abortSignal }) {
     const last = messages[messages.length - 1];
@@ -29,12 +31,25 @@ export const MindStudioAdapter: ChatModelAdapter = {
       return;
     }
 
+    // Build history from prior messages (skip the most recent, which IS the new question).
+    const history = messages
+      .slice(0, -1)
+      .slice(-HISTORY_LIMIT)
+      .map((m) => ({
+        role: m.role,
+        content: m.content
+          .map((p) => (p.type === "text" ? p.text : ""))
+          .join(" ")
+          .trim(),
+      }))
+      .filter((m) => (m.role === "user" || m.role === "assistant") && m.content);
+
     setSources([]);
 
     const resp = await fetch("/api/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, history }),
       signal: abortSignal,
     });
 
