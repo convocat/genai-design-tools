@@ -9,6 +9,11 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+    // react-force-graph ships its own React peer; force a single copy.
+    dedupe: ["react", "react-dom"],
+  },
+  optimizeDeps: {
+    include: ["react", "react-dom", "react-dom/client"],
   },
   server: {
     port: 5173,

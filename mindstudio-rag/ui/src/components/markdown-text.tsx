@@ -130,8 +130,11 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  a: ({ className, ...props }) => (
+  a: ({ className, href, ...props }) => (
     <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
       className={cn(
         "aui-md-a text-primary underline underline-offset-2 hover:text-primary/80",
         className,

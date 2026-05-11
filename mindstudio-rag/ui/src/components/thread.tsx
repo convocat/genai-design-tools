@@ -237,6 +237,16 @@ const AssistantMessage: FC = () => {
             }
           }}
         </MessagePrimitive.GroupedParts>
+        <AuiIf condition={(s) => s.message.status?.type === "running"}>
+          <span
+            className="aui-streaming-indicator ml-1 inline-flex items-center gap-1 align-middle"
+            aria-label="Generating response"
+          >
+            <span className="block size-1.5 animate-bounce rounded-full bg-muted-foreground/60" />
+            <span className="block size-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:120ms]" />
+            <span className="block size-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:240ms]" />
+          </span>
+        </AuiIf>
         <MessageError />
       </div>
 
