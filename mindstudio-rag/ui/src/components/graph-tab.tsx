@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import ForceGraph2D, { type ForceGraphMethods } from "react-force-graph-2d";
+import ForceGraph2D from "react-force-graph-2d";
 
 type Entity = {
   id: number;
@@ -50,7 +50,10 @@ export function GraphTab() {
   const [minStrength, setMinStrength] = useState(5);
   const [activeCommunity, setActiveCommunity] = useState<number | "all">("all");
   const [search, setSearch] = useState("");
-  const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
+  // Library's ref type is generic over node/link shape; pragmatic any avoids
+  // a long parameterised union and works at runtime.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fgRef = useRef<any>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState({ w: 800, h: 600 });
 
