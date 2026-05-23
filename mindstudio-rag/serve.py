@@ -97,6 +97,34 @@ def _format_history_for_hyde(history: Optional[list]) -> str:
     return "Recent conversation:\n" + "\n".join(lines) + "\n\n"
 
 
+# Tokens that suggest the question refers back to something earlier in the
+# conversation ("what about that one?"). When none are present and the
+# question is reasonably specific, we skip HyDE to save ~0.5-1s per turn.
+_REFERENCE_TOKENS = (
+    " that ", " this ", " it ", " it?", " they ", " them ", " those ",
+    " the other", " what about", " and ", " also", " too?", " hierover",
+    " daarover", " die ", " dat ", " hij ", " zij ", " ze ",
+)
+
+
+def _hyde_would_help(question: str, history: Optional[list]) -> bool:
+    """Return True when HyDE is worth its latency.
+
+    Skipped when:
+    - The question is long and specific (>= 60 chars) AND has no history AND
+      contains no obvious back-references — in that case the literal question
+      already embeds well.
+    """
+    if history:
+        return True  # follow-ups frequently need reference resolution
+    q = f" {question.lower().strip()} "
+    if len(question) < 60:
+        return True  # short questions benefit from HyDE vocabulary expansion
+    if any(tok in q for tok in _REFERENCE_TOKENS):
+        return True
+    return False
+
+
 def _hyde(question: str, history: Optional[list] = None, trace=None) -> str:
     fb = _fallback("query-rewrite.md")
     system, prompt_obj = get_prompt(HYDE_PROMPT_ID, fb)
@@ -104,8 +132,10 @@ def _hyde(question: str, history: Optional[list] = None, trace=None) -> str:
     user_content = f"{hist_block}Current question: {question}" if hist_block else question
     messages = [{"role": "user", "content": user_content}]
     try:
+        # HyDE only needs a short hypothetical passage; cap tokens low so the
+        # rewrite step doesn't dominate time-to-first-token of the real answer.
         resp = State.anthropic.messages.create(
-            model=HYDE_MODEL, max_tokens=300, system=system, messages=messages,
+            model=HYDE_MODEL, max_tokens=160, system=system, messages=messages,
         )
         out = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
         if trace is not None:
@@ -120,8 +150,12 @@ def _hyde(question: str, history: Optional[list] = None, trace=None) -> str:
 
 # ── Local search ───────────────────────────────────────────────────────────
 def retrieve(question: str, history: Optional[list] = None, trace=None) -> dict:
-    hyde_passage = _hyde(question, history=history, trace=trace)
-    embed_text = f"{question}\n\n{hyde_passage}"
+    if _hyde_would_help(question, history):
+        hyde_passage = _hyde(question, history=history, trace=trace)
+        embed_text = f"{question}\n\n{hyde_passage}"
+    else:
+        hyde_passage = ""  # skipped — question is self-contained
+        embed_text = question
 
     try:
         qvec = embed_mod.embed_query(embed_text)
@@ -332,12 +366,17 @@ def ask(req: AskRequest):
     if len(question) > 500:
         raise HTTPException(400, "question too long")
 
-    session_id = req.session_id or f"sess-{int(time.time())}"
+    # Prefix the session_id with the bot name so conversation designers can
+    # tell mindstudio sessions apart from other bots at a glance in the
+    # Langfuse Sessions list. MindStudio supplies its own session id per
+    # conversation; if it isn't passed, fall back to a timestamp.
+    raw_session_id = req.session_id or f"sess-{int(time.time())}"
+    session_id = raw_session_id if raw_session_id.startswith("mindstudio-") else f"mindstudio-{raw_session_id}"
     trace = start_trace(
         name="bot:mindstudio-ask",
         session_id=session_id,
         input_text=question,
-        metadata={"source": "api"},
+        metadata={"source": "mindstudio", "question": question},
         tags=["mindstudio", "ask"],
     )
 
@@ -369,6 +408,12 @@ def ask(req: AskRequest):
                     messages.append({"role": h.role, "content": h.content})
         messages.append({"role": "user", "content": user})
 
+        # Mark the system prompt as cacheable. Anthropic's prompt cache returns
+        # the answer faster (and cheaper) when the same system prompt is reused
+        # across requests — which is the common case here.
+        system_blocks = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+        source_urls = [s["url"] for s in retrieval["sources"]]
+
         def stream():
             collected: list[str] = []
             yield json.dumps({"type": "sources", "sources": [
@@ -378,7 +423,7 @@ def ask(req: AskRequest):
             final_msg = None
             try:
                 with State.anthropic.messages.stream(
-                    model=ANSWER_MODEL, max_tokens=900, system=system, messages=messages,
+                    model=ANSWER_MODEL, max_tokens=900, system=system_blocks, messages=messages,
                 ) as stream_resp:
                     for text in stream_resp.text_stream:
                         collected.append(text)
@@ -397,6 +442,30 @@ def ask(req: AskRequest):
             except Exception:
                 pass
             trace.set_output(answer)
+            # Surface the key fields as trace-level metadata so conversation
+            # designers can read / filter them as variables in Langfuse.
+            try:
+                trace.set_metadata({
+                    # Inputs / outputs
+                    "question": question,
+                    "answer": answer,
+                    # Intermediate prompt outputs (promoted to trace-level
+                    # variables so designers don't have to drill into child
+                    # observations to see them).
+                    "hyde_rewrite": retrieval.get("hyde", "") or "(skipped)",
+                    "matched_articles": retrieval.get("pages", []),
+                    "matched_topics": [e["name"] for e in retrieval.get("entities", [])],
+                    "fired_triples_count": len(retrieval.get("relationships", [])),
+                    "retrieval_context_preview": context[:1500],
+                    # Sources + run info
+                    "num_sources": len(source_urls),
+                    "source_urls": source_urls,
+                    "fallback": retrieval.get("fallback", False),
+                    "answer_model": ANSWER_MODEL,
+                    "history_turns": len(req.history or []),
+                })
+            except Exception:
+                pass
             yield json.dumps({"type": "done"}) + "\n"
 
         def stream_and_close():

@@ -103,6 +103,7 @@ class _NoOpTrace:
     def set_output(self, *_a, **_kw): pass
     def set_error(self, *_a, **_kw): pass
     def add_tag(self, *_a, **_kw): pass
+    def set_metadata(self, *_a, **_kw): pass
 
 
 class _Trace:
@@ -213,6 +214,14 @@ class _Trace:
     def set_output(self, text: str) -> None:
         try:
             self._span.update(output=text)
+        except Exception:
+            pass
+
+    def set_metadata(self, extra: dict) -> None:
+        """Merge fields into the root span's metadata. Surfaces these as
+        filterable key/value variables in the Langfuse trace view."""
+        try:
+            self._span.update(metadata=extra)
         except Exception:
             pass
 
