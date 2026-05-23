@@ -167,11 +167,11 @@ class _Trace:
         except Exception:
             pass
 
-    def record_retrieval(self, question: str, retrieval_debug: dict) -> None:
+    def record_retrieval(self, question: str, retrieval_debug: dict, *, name: str = "graph-retrieval") -> None:
         token = self._with_context()
         try:
             with self._client.start_as_current_observation(
-                name="retrieval",
+                name=name,
                 as_type="span",
                 input=question,
                 metadata=retrieval_debug,
@@ -190,11 +190,12 @@ class _Trace:
 
     def record_generation(self, *, model: str, messages: list, system_prompt: str,
                           output_text: str, usage: Optional[dict] = None,
-                          prompt_obj: Optional[Any] = None) -> None:
+                          prompt_obj: Optional[Any] = None,
+                          name: str = "generation") -> None:
         token = self._with_context()
         try:
             obs_kwargs: dict[str, Any] = {
-                "name": "generation",
+                "name": name,
                 "as_type": "generation",
                 "model": model,
                 "input": {"system": system_prompt, "messages": messages},

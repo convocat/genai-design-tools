@@ -140,6 +140,7 @@ def _hyde(question: str, history: Optional[list] = None, trace=None) -> str:
         out = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
         if trace is not None:
             trace.record_generation(
+                name="hyde-rewrite",
                 model=HYDE_MODEL, messages=messages, system_prompt=system,
                 output_text=out, usage=extract_usage(resp), prompt_obj=prompt_obj,
             )
@@ -150,12 +151,8 @@ def _hyde(question: str, history: Optional[list] = None, trace=None) -> str:
 
 # ── Local search ───────────────────────────────────────────────────────────
 def retrieve(question: str, history: Optional[list] = None, trace=None) -> dict:
-    if _hyde_would_help(question, history):
-        hyde_passage = _hyde(question, history=history, trace=trace)
-        embed_text = f"{question}\n\n{hyde_passage}"
-    else:
-        hyde_passage = ""  # skipped — question is self-contained
-        embed_text = question
+    hyde_passage = _hyde(question, history=history, trace=trace)
+    embed_text = f"{question}\n\n{hyde_passage}"
 
     try:
         qvec = embed_mod.embed_query(embed_text)
@@ -436,6 +433,7 @@ def ask(req: AskRequest):
             answer = "".join(collected)
             try:
                 trace.record_generation(
+                    name="answer-generation",
                     model=ANSWER_MODEL, messages=messages, system_prompt=system,
                     output_text=answer, usage=extract_usage(final_msg), prompt_obj=prompt_obj,
                 )
